@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "bastion",
+  "outputfilename": "bastion",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "fardani235",
+    "email": "ridwan.fardani@gmail.com"
+  },
+  "info": {
+    "productVersion": "1.0.0",
+    "productName": "Bastion",
+    "companyName": "fardani235",
+    "copyright": "Copyright © 2026 fardani235"
+  }
+}

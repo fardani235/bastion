@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Bastion
+Comment=SSH client and session manager
+Exec=/usr/bin/bastion
+Icon=bastion
+Terminal=false
+Type=Application
+Categories=Network;RemoteAccess;Utility;
+StartupWMClass=bastion

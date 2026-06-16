@@ -1,0 +1,41 @@
+# Build artifacts
+build/bin/
+frontend/dist/
+frontend/node_modules/
+
+# Packaged binaries (built by `wails build` / packaging scripts)
+build/*.deb
+build/*.AppImage
+build/*.rpm
+build/linux/*.deb
+build/windows/*.exe
+build/windows/installer/*.exe
+
+# Wails internals
+frontend/wailsjs/
+
+# Go
+*.test
+*.out
+coverage.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local config and data
+*.local
+.env
+.env.*
+!.env.example
+
+# Bastion local vault (must never be committed)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Internal docs (specs, plans, analysis) — kept local, not published
+docs/
