@@ -65,6 +65,7 @@ interface AppState {
   // AI drawer.
   aiOpen: boolean
   aiConfigured: boolean
+  aiAutoExplainErrors: boolean
   aiMessages: AIMessage[]
   toggleAI: () => void
   refreshAIConfig: () => Promise<void>
@@ -141,14 +142,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   // AI drawer.
   aiOpen: false,
   aiConfigured: false,
+  aiAutoExplainErrors: false,
   aiMessages: [],
   toggleAI: () => set((s) => ({aiOpen: !s.aiOpen, snippetsOpen: false})),
   refreshAIConfig: async () => {
     try {
       const st = await aiApi.getAIConfigStatus()
-      set({aiConfigured: st.configured})
+      set({aiConfigured: st.configured, aiAutoExplainErrors: st.autoExplainErrors})
     } catch {
-      set({aiConfigured: false})
+      set({aiConfigured: false, aiAutoExplainErrors: false})
     }
   },
   addAIMessage: (msg) => set((s) => ({aiMessages: [...s.aiMessages, msg]})),

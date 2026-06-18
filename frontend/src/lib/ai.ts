@@ -12,16 +12,21 @@ export interface AIErrorResult {
   fixCommand?: string
 }
 
-export interface AIConfig {
-  provider: string       // "openai", "anthropic", "openai-compatible"
+// AIConfigView is the renderer-facing view of the AI config. It deliberately
+// carries NO API key — the backend sends a hasKey flag instead (mirroring the
+// host-credential boundary). The key travels renderer->Go only, via setAIConfig.
+export interface AIConfigView {
+  provider: string          // "openai", "anthropic", "openai-compatible"
   model: string
-  endpoint?: string      // custom endpoint for openai-compatible
-  apiKey: string
-  systemPrompt?: string  // custom system prompt; empty = use default
+  endpoint?: string         // custom endpoint for openai-compatible
+  systemPrompt?: string     // custom system prompt; empty = use default
+  hasKey: boolean           // whether a key is stored (never the key itself)
+  autoExplainErrors: boolean // auto-send terminal output to the AI on errors
 }
 
 export interface AIConfigStatus {
   configured: boolean
+  autoExplainErrors: boolean
 }
 
 export const generateCommand = (sessionId: string, prompt: string) =>
@@ -30,11 +35,11 @@ export const generateCommand = (sessionId: string, prompt: string) =>
 export const explainError = (sessionId: string, output: string) =>
   App.ExplainError(sessionId, output) as Promise<AIErrorResult>
 
-export const setAIConfig = (provider: string, model: string, endpoint: string, apiKey: string, systemPrompt?: string) =>
-  App.SetAIConfig(provider, model, endpoint, apiKey, systemPrompt ?? '') as Promise<void>
+export const setAIConfig = (provider: string, model: string, endpoint: string, apiKey: string, systemPrompt?: string, autoExplainErrors?: boolean) =>
+  App.SetAIConfig(provider, model, endpoint, apiKey, systemPrompt ?? '', autoExplainErrors ?? false) as Promise<void>
 
 export const getAIConfig = () =>
-  App.GetAIConfig() as Promise<AIConfig>
+  App.GetAIConfig() as Promise<AIConfigView>
 
 export const getAIConfigStatus = () =>
   App.GetAIConfigStatus() as Promise<AIConfigStatus>

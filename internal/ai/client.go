@@ -13,11 +13,16 @@ const requestTimeout = 30 * time.Second
 
 // AIConfig holds the user's AI provider settings, encrypted in vault_meta.
 type AIConfig struct {
-	Provider      string `json:"provider"`                 // "openai", "anthropic", "openai-compatible"
-	Model         string `json:"model"`
-	Endpoint      string `json:"endpoint,omitempty"`       // custom endpoint for openai-compatible
-	APIKey        string `json:"apiKey"`
-	SystemPrompt  string `json:"systemPrompt,omitempty"`  // custom system prompt; empty = use default
+	Provider     string `json:"provider"`                // "openai", "anthropic", "openai-compatible"
+	Model        string `json:"model"`
+	Endpoint     string `json:"endpoint,omitempty"`      // custom endpoint for openai-compatible
+	APIKey       string `json:"apiKey"`
+	SystemPrompt string `json:"systemPrompt,omitempty"`  // custom system prompt; empty = use default
+	// AutoExplainErrors enables automatically sending terminal output to the
+	// provider when an error pattern is detected. It is OFF by default: auto
+	// detection ships screen content (hostnames, file contents, echoed secrets)
+	// to a third party without a per-event prompt, so the user must opt in.
+	AutoExplainErrors bool `json:"autoExplainErrors,omitempty"`
 }
 
 // CompletionRequest is the payload for the chat completion endpoint.

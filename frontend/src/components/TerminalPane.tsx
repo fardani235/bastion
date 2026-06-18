@@ -117,11 +117,13 @@ export default function TerminalPane({tab, visible}: {tab: Tab; visible: boolean
         for (const fn of deferred) fn()
 
         // Error detection: check for common error patterns and suggest fixes.
-        if (useAppStore.getState().aiConfigured && detectError(text)) {
+        // Gated on aiAutoExplainErrors — this path ships terminal output to a
+        // third-party provider automatically, so it is opt-in (off by default).
+        if (useAppStore.getState().aiConfigured && useAppStore.getState().aiAutoExplainErrors && detectError(text)) {
           clearTimeout(errorTimerRef.current)
           errorTimerRef.current = setTimeout(() => {
             const state = useAppStore.getState()
-            if (!state.aiConfigured) return
+            if (!state.aiConfigured || !state.aiAutoExplainErrors) return
             aiApi.explainError(tab.sessionId, text).then((result) => {
               const msg: AIMessage = {
                 id: `ai-sug-${Date.now()}`,

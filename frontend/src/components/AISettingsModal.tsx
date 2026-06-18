@@ -11,7 +11,9 @@ export default function AISettingsModal({onClose}: {onClose: () => void}) {
   const [model, setModel] = useState('gpt-4o')
   const [endpoint, setEndpoint] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [hasKey, setHasKey] = useState(false)
   const [systemPrompt, setSystemPrompt] = useState('')
+  const [autoExplainErrors, setAutoExplainErrors] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -23,11 +25,14 @@ export default function AISettingsModal({onClose}: {onClose: () => void}) {
     const load = async () => {
       try {
         const cfg = await aiApi.getAIConfig()
-        if (cfg.apiKey) {
+        setAutoExplainErrors(cfg.autoExplainErrors)
+        if (cfg.hasKey) {
           setProvider(cfg.provider)
           setModel(cfg.model)
           setEndpoint(cfg.endpoint || '')
-          setApiKey(cfg.apiKey)
+          setHasKey(true)
+          // The key itself is never sent to the renderer. Leave the field blank;
+          // a blank key on save means "keep the stored key".
           setSystemPrompt(cfg.systemPrompt || '')
         }
       } catch {
@@ -40,14 +45,14 @@ export default function AISettingsModal({onClose}: {onClose: () => void}) {
   }, [])
 
   async function handleSave() {
-    if (!apiKey.trim()) {
+    if (!apiKey.trim() && !hasKey) {
       setError('API key is required')
       return
     }
     setSaving(true)
     setError('')
     try {
-      await aiApi.setAIConfig(provider, model, endpoint, apiKey, systemPrompt)
+      await aiApi.setAIConfig(provider, model, endpoint, apiKey, systemPrompt, autoExplainErrors)
       await refreshAIConfig()
       onClose()
     } catch (e) {
@@ -58,7 +63,7 @@ export default function AISettingsModal({onClose}: {onClose: () => void}) {
   }
 
   async function handleTest() {
-    if (!apiKey.trim()) {
+    if (!apiKey.trim() && !hasKey) {
       setError('API key is required')
       return
     }
@@ -66,7 +71,7 @@ export default function AISettingsModal({onClose}: {onClose: () => void}) {
     setTestResult(null)
     setError('')
     try {
-      await aiApi.setAIConfig(provider, model, endpoint, apiKey, systemPrompt)
+      await aiApi.setAIConfig(provider, model, endpoint, apiKey, systemPrompt, autoExplainErrors)
       setError('Config saved, testing connection...')
     } catch (e) {
       setTestResult('fail')
@@ -136,7 +141,7 @@ export default function AISettingsModal({onClose}: {onClose: () => void}) {
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-…"
+              placeholder={hasKey ? '•••••••• (leave blank to keep current key)' : 'sk-…'}
               className={inputClass}
             />
           </Field>
@@ -159,6 +164,24 @@ export default function AISettingsModal({onClose}: {onClose: () => void}) {
               </button>
             </div>
           </Field>
+
+          <label className="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              checked={autoExplainErrors}
+              onChange={(e) => setAutoExplainErrors(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span className="text-sm text-text">
+              Auto-explain errors
+              <span className="mt-0.5 block text-xs text-muted">
+                When a command fails, automatically send the terminal output to your
+                AI provider for an explanation. Off by default: this transmits screen
+                contents (which may include hostnames, file contents, or secrets) to a
+                third party without asking each time.
+              </span>
+            </span>
+          </label>
 
           {testResult === 'ok' && (
             <p className="text-xs text-accent">Connection successful ✓</p>

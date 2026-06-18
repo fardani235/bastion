@@ -3,11 +3,49 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 
 	"bastion/internal/ai"
 	"bastion/internal/vault"
 )
+
+// validateAIEndpoint checks a user-supplied AI endpoint before it is stored and
+// later POSTed to with the API key in an auth header. An empty endpoint is
+// allowed (the client falls back to the provider's official URL). Otherwise the
+// URL must be well-formed with a host, and the scheme must be https — except for
+// loopback hosts, where plain http is allowed so local providers like Ollama
+// (http://localhost:11434/v1) work. This stops a malformed or hostile endpoint
+// from silently exfiltrating the key to an attacker-chosen, cleartext host.
+func validateAIEndpoint(endpoint string) error {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return nil
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("bastion: invalid AI endpoint: %w", err)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("bastion: AI endpoint must include a host")
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		host := u.Hostname()
+		if host == "localhost" {
+			return nil
+		}
+		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			return nil
+		}
+		return fmt.Errorf("bastion: AI endpoint must use https (http is allowed only for localhost)")
+	default:
+		return fmt.Errorf("bastion: AI endpoint scheme %q not allowed (use https)", u.Scheme)
+	}
+}
 
 // AICommandResult is returned by GenerateCommand.
 type AICommandResult struct {
@@ -21,9 +59,25 @@ type AIErrorResult struct {
 	FixCommand  string `json:"fixCommand,omitempty"`
 }
 
-// AIConfigStatus reports whether AI is configured (no secrets exposed).
+// AIConfigStatus reports whether AI is configured (no secrets exposed). It also
+// carries the auto-explain-errors flag so the terminal can cheaply gate the
+// automatic-egress path without fetching the full config.
 type AIConfigStatus struct {
-	Configured bool `json:"configured"`
+	Configured        bool `json:"configured"`
+	AutoExplainErrors bool `json:"autoExplainErrors"`
+}
+
+// AIConfigView is the renderer-facing view of the AI config. Like HostDTO, it
+// deliberately carries NO secret: the UI gets a HasKey flag so it can show
+// "key set" without ever receiving the API key. The key travels renderer->Go
+// only (via SetAIConfig) and never the other way.
+type AIConfigView struct {
+	Provider          string `json:"provider"`
+	Model             string `json:"model"`
+	Endpoint          string `json:"endpoint,omitempty"`
+	SystemPrompt      string `json:"systemPrompt,omitempty"`
+	HasKey            bool   `json:"hasKey"`
+	AutoExplainErrors bool   `json:"autoExplainErrors"`
 }
 
 const metaAIConfig = "ai_config"
@@ -78,27 +132,57 @@ func (a *App) writeAIConfig(cfg ai.AIConfig) error {
 	return a.store.SetMeta(metaAIConfig, ct)
 }
 
-// GetAIConfig returns the stored AI provider config (without secrets in log).
-func (a *App) GetAIConfig() (ai.AIConfig, error) {
+// GetAIConfig returns the stored AI provider config as a key-free view. The
+// API key is never sent to the renderer; the UI receives a HasKey flag instead
+// (mirroring the host-credential boundary in hosts.go).
+func (a *App) GetAIConfig() (AIConfigView, error) {
 	if !a.IsUnlocked() {
-		return ai.AIConfig{}, errLocked
+		return AIConfigView{}, errLocked
 	}
-	return a.readAIConfig()
+	cfg, err := a.readAIConfig()
+	if err != nil {
+		return AIConfigView{}, err
+	}
+	return AIConfigView{
+		Provider:          cfg.Provider,
+		Model:             cfg.Model,
+		Endpoint:          cfg.Endpoint,
+		SystemPrompt:      cfg.SystemPrompt,
+		HasKey:            cfg.APIKey != "",
+		AutoExplainErrors: cfg.AutoExplainErrors,
+	}, nil
 }
 
-// SetAIConfig saves AI provider settings, encrypted in the vault.
-func (a *App) SetAIConfig(provider, model, endpoint, apiKey, systemPrompt string) error {
+// SetAIConfig saves AI provider settings, encrypted in the vault. A blank
+// apiKey means "keep the existing key" — the renderer never holds the key, so
+// it cannot resend an unchanged one (same pattern as host passwords in
+// hosts.go's encryptOrInherit).
+func (a *App) SetAIConfig(provider, model, endpoint, apiKey, systemPrompt string, autoExplainErrors bool) error {
 	if !a.IsUnlocked() {
 		return errLocked
 	}
 	defer a.touchAutoLock()
 
+	if err := validateAIEndpoint(endpoint); err != nil {
+		return err
+	}
+
+	if apiKey == "" {
+		// Inherit the previously stored key rather than clobbering it with empty.
+		prev, err := a.readAIConfig()
+		if err != nil {
+			return err
+		}
+		apiKey = prev.APIKey
+	}
+
 	return a.writeAIConfig(ai.AIConfig{
-		Provider:     provider,
-		Model:        model,
-		Endpoint:     endpoint,
-		APIKey:       apiKey,
-		SystemPrompt: systemPrompt,
+		Provider:          provider,
+		Model:             model,
+		Endpoint:          endpoint,
+		APIKey:            apiKey,
+		SystemPrompt:      systemPrompt,
+		AutoExplainErrors: autoExplainErrors,
 	})
 }
 
@@ -111,7 +195,10 @@ func (a *App) GetAIConfigStatus() (AIConfigStatus, error) {
 	if err != nil {
 		return AIConfigStatus{}, err
 	}
-	return AIConfigStatus{Configured: cfg.APIKey != ""}, nil
+	return AIConfigStatus{
+		Configured:        cfg.APIKey != "",
+		AutoExplainErrors: cfg.AutoExplainErrors,
+	}, nil
 }
 
 // GenerateCommand sends a natural-language prompt to the AI and returns a shell
