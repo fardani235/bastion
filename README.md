@@ -144,8 +144,10 @@ terminal input — a locked vault never leaves a writable terminal open behind i
 ### File upload
 
 Right-click a connected terminal to open the context menu with **Upload Files…**
-and **Upload Folder…** options. Native drag-and-drop (files → connected terminal)
-also works on platforms where WebKit2GTK supports it.
+and **Upload Folder…** options, each opening the native OS picker. (Drag-and-drop
+onto the terminal is intentionally not used: on Linux/WebKit2GTK the webview
+opens a dropped file instead of yielding its path, so file selection goes through
+the picker.)
 
 Uploads run over **SFTP on the session's existing SSH connection** — no
 re-authentication, no second password prompt, and file bytes are read by the Go
