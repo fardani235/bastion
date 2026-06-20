@@ -45,14 +45,11 @@ frontend) and [xterm.js](https://xtermjs.org).
 
 ## Demos
 
-<video src="vid2.mp4" width="100%" controls></video>
-*Right-click context menu with Copy, Paste, and upload actions*
+![Right-click context menu — Copy, Paste, Upload](vid2.gif)
 
-<video src="vid1.mp4" width="100%" controls></video>
-*Snippets drawer — save and paste frequently used commands*
+![Snippets drawer — save and paste frequently used commands](vid1.gif)
 
-<video src="vid0.mp4" width="100%" controls></video>
-*AI command generation and error explanation*
+![AI command generation and error explanation](vid0.gif)
 
 ---
 
