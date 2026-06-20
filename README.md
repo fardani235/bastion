@@ -44,11 +44,13 @@ frontend) and [xterm.js](https://xtermjs.org).
   down every live session.
 
 ## Demos
-
+### Context menu
 ![Right-click context menu — Copy, Paste, Upload](vid2.gif)
 
+### Snippets drawer
 ![Snippets drawer — save and paste frequently used commands](vid1.gif)
 
+### AI drawer
 ![AI command generation and error explanation](vid0.gif)
 
 ---
