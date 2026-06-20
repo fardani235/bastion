@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -55,6 +57,24 @@ type runningSession struct {
 	startedAt time.Time
 
 	closeOnce sync.Once
+
+	// cwd is the remote working directory last advertised by the shell via an
+	// OSC 7 escape sequence in the PTY stream. Empty until the shell emits one
+	// (many default shells do not). Guarded by cwdMu.
+	cwdMu sync.Mutex
+	cwd   string
+}
+
+func (rs *runningSession) setCWD(dir string) {
+	rs.cwdMu.Lock()
+	rs.cwd = dir
+	rs.cwdMu.Unlock()
+}
+
+func (rs *runningSession) getCWD() string {
+	rs.cwdMu.Lock()
+	defer rs.cwdMu.Unlock()
+	return rs.cwd
 }
 
 // Manager owns the set of live SSH sessions and streams their output through
@@ -181,6 +201,12 @@ func (m *Manager) pump(rs *runningSession, stdout io.Reader) {
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
+			// Sniff the chunk for an OSC 7 cwd advertisement before handing the
+			// bytes to the emitter. This is how the upload feature learns the
+			// shell's working directory without polluting the interactive shell.
+			if dir, ok := parseOSC7(chunk); ok {
+				rs.setCWD(dir)
+			}
 			m.emitter.EmitOutput(rs.id, chunk)
 		}
 		if err != nil {
@@ -290,4 +316,66 @@ func (m *Manager) lookup(sessionID string) (*runningSession, bool) {
 		return nil, false
 	}
 	return v.(*runningSession), true
+}
+
+// Client returns the live SSH client for a session, for reuse by features that
+// run over the same connection (e.g. SFTP upload). The returned client is owned
+// by the Manager and must not be closed by the caller.
+func (m *Manager) Client(sessionID string) (*gossh.Client, bool) {
+	rs, ok := m.lookup(sessionID)
+	if !ok {
+		return nil, false
+	}
+	return rs.client, true
+}
+
+// CWD returns the remote working directory last advertised by the session's
+// shell via OSC 7, or "" if none has been seen.
+func (m *Manager) CWD(sessionID string) string {
+	rs, ok := m.lookup(sessionID)
+	if !ok {
+		return ""
+	}
+	return rs.getCWD()
+}
+
+// parseOSC7 scans a PTY output chunk for an OSC 7 working-directory sequence:
+//
+//	ESC ] 7 ; file://<host>/<path> (BEL | ESC \)
+//
+// On a match it returns the decoded local path and true. Only the last
+// occurrence in the chunk is returned, so a chunk containing several prompts
+// resolves to the most recent directory. URL percent-escapes in the path are
+// decoded; a malformed or partial sequence yields ("", false) without error.
+func parseOSC7(chunk []byte) (string, bool) {
+	const prefix = "\x1b]7;file://"
+	s := string(chunk)
+	dir := ""
+	found := false
+	for {
+		i := strings.Index(s, prefix)
+		if i < 0 {
+			break
+		}
+		rest := s[i+len(prefix):]
+		// Terminator is BEL (\a) or ST (ESC \).
+		end := strings.IndexAny(rest, "\a\x1b")
+		if end < 0 {
+			break // sequence is split across chunks; ignore until complete
+		}
+		body := rest[:end]
+		// body is host/path; drop the host component up to the first '/'.
+		if slash := strings.IndexByte(body, '/'); slash >= 0 {
+			p := body[slash:]
+			if decoded, err := url.PathUnescape(p); err == nil {
+				p = decoded
+			}
+			if p != "" {
+				dir = p
+				found = true
+			}
+		}
+		s = rest[end:]
+	}
+	return dir, found
 }

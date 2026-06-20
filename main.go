@@ -41,8 +41,19 @@ func main() {
 			DisableWindowIcon: false,
 		},
 		BackgroundColour: &options.RGBA{R: 11, G: 15, B: 20, A: 1},
-		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
+		// File upload uses a native file picker (PickFilesForUpload), not native
+		// drag-and-drop: on Linux/WebKit2GTK a file dropped on the webview is
+		// opened by the webview (navigating to file://) rather than yielding its
+		// path, and the only suppression (gtk_drag_dest_unset) also kills path
+		// delivery — so drag-drop can't both work and stay safe there.
+		// DisableWebViewDrop neutralizes that accidental file-open, making a stray
+		// drag a harmless no-op. EnableFileDrop is left off since we don't rely on
+		// dropped paths.
+		DragAndDrop: &options.DragAndDrop{
+			DisableWebViewDrop: true,
+		},
+		OnStartup:  app.startup,
+		OnShutdown: app.shutdown,
 		Bind: []any{
 			app,
 		},

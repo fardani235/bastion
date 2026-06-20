@@ -3,11 +3,22 @@ import * as api from '../lib/api'
 import * as aiApi from '../lib/ai'
 import type {HostDTO, Group, Snippet, UnknownHostKeyInfo, ActiveForwardInfo, SessionHealthDTO} from '../lib/api'
 import type {AIConfigStatus} from '../lib/ai'
+import type {UploadCandidate} from '../lib/transfer'
 
 // A pending trust prompt: the untrusted key plus the retry to run on accept.
 export interface TrustPrompt {
   info: UnknownHostKeyInfo
   retry: () => Promise<void>
+}
+
+// A pending file upload: the prepared candidates and destination for one
+// session, shown in the upload confirm/progress modal. Set when the user picks
+// files; cleared when the modal closes.
+export interface PendingUpload {
+  sessionId: string
+  hostLabel: string
+  destDir: string
+  candidates: UploadCandidate[]
 }
 
 // A Tab is one open terminal. sessionId is empty until OpenSession succeeds;
@@ -59,6 +70,10 @@ interface AppState {
   // Trust prompt.
   setTrustPrompt: (p: TrustPrompt | null) => void
 
+  // File upload modal.
+  pendingUpload: PendingUpload | null
+  setPendingUpload: (p: PendingUpload | null) => void
+
   // Snippets drawer.
   toggleSnippets: () => void
 
@@ -89,6 +104,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   tabs: [],
   activeTabId: null,
   trustPrompt: null,
+  pendingUpload: null,
   snippetsOpen: false,
   activeForwards: [],
   sessionHealth: {count: 0},
@@ -136,6 +152,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
 
   setTrustPrompt: (p) => set({trustPrompt: p}),
+
+  setPendingUpload: (p) => set({pendingUpload: p}),
 
   toggleSnippets: () => set((s) => ({snippetsOpen: !s.snippetsOpen, aiOpen: false})),
 

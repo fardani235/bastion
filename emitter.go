@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	appssh "bastion/internal/ssh"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -45,6 +46,17 @@ func (e *wailsEmitter) EmitOutput(sessionID string, chunk []byte) {
 func (e *wailsEmitter) EmitClosed(sessionID string, reason string) {
 	runtime.EventsEmit(e.ctx, fmt.Sprintf("session:closed:%s", sessionID), reason)
 	e.closeLog(sessionID)
+}
+
+// EmitUploadProgress publishes a single file-upload progress update. The
+// payload is the appssh.UploadProgress struct, JSON-serialized by Wails.
+func (e *wailsEmitter) EmitUploadProgress(p appssh.UploadProgress) {
+	runtime.EventsEmit(e.ctx, "upload:progress:"+p.TransferID, p)
+}
+
+// EmitUploadDone publishes the final per-file result list for a transfer.
+func (e *wailsEmitter) EmitUploadDone(transferID string, results []appssh.UploadFileResult) {
+	runtime.EventsEmit(e.ctx, "upload:done:"+transferID, results)
 }
 
 // OpenLog creates a log file for the given session and starts writing output.
