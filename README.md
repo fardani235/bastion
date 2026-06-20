@@ -23,6 +23,11 @@ frontend) and [xterm.js](https://xtermjs.org).
   `known_hosts` file; a *changed* key is a hard failure, never a silent accept.
 - **Local port forwarding** — define `local → remote` rules per host that start
   and stop with the session, bound to `127.0.0.1` only.
+- **File upload** — upload files and folders to the remote host over SFTP (or
+  native file picker via the toolbar button on each terminal pane, since
+  drag-and-drop is unreliable on Linux/WebKit2GTK). Directories are uploaded
+  recursively with their structure preserved. Reuses the session's existing
+  authenticated connection — no extra password prompt.
 - **Snippets** — save and paste frequently used commands.
 - **AI command generation** — describe what you want and get a shell command,
   powered by OpenAI, Anthropic, or any OpenAI-compatible provider (OpenRouter,
@@ -92,13 +97,14 @@ sessions.go        — OpenSession, host-key trust, terminal I/O IPC
 crud.go            — groups & snippets IPC
 portforwards.go    — port-forward config IPC
 hosts_import.go    — ~/.ssh/config scan & import
+transfer.go        — file-upload IPC: PrepareUpload, UploadFiles, ResolveUploadDir
 ai.go              — AI IPC: GenerateCommand, ExplainError, Get/SetAIConfig, TestAIConnection
 emitter.go         — Wails event emitter + optional session logging
 session_health.go  — live session info
 
 internal/vault/    — Argon2id KDF, AES-256-GCM, verify-blob (crypto core)
 internal/store/    — SQLite persistence (hosts, groups, snippets, port_forwards)
-internal/ssh/      — known-hosts trust store, PTY session & port-forward managers
+internal/ssh/      — known-hosts trust, PTY session, port-forward & SFTP upload managers
 internal/ai/       — LLM client (OpenAI, Anthropic, OpenAI-compatible formats)
 
 frontend/          — React + TypeScript + Vite + Tailwind + xterm.js
@@ -122,6 +128,42 @@ The vault locks automatically after an idle timeout (default 5 minutes,
 configurable via `SetAutoLockSeconds`, minimum 60s) and when the OS screensaver
 activates. **Locking closes every live SSH session** and rejects further
 terminal input — a locked vault never leaves a writable terminal open behind it.
+
+### File upload
+
+Upload files and directories to the remote host via the **Upload** button in the
+Copy/Paste toolbar (hover to reveal) at the top-right of each terminal pane.
+Native drag-and-drop (files → connected terminal) also works on platforms where
+WebKit2GTK supports it; when it does not, the toolbar button opens the OS file
+picker instead.
+
+Uploads run over **SFTP on the session's existing SSH connection** — no
+re-authentication, no second password prompt, and file bytes are read by the Go
+backend directly (they never pass through the renderer).
+
+- **Directories** — folders are uploaded recursively. Their structure is
+  preserved on the remote side: uploading `project/` with `src/main.go` and
+  `README.md` lands as `destDir/project/src/main.go` and
+  `destDir/project/README.md`.
+- **Destination** — files land in the shell's current working directory when it
+  can be determined, otherwise the remote home directory. The CWD is tracked
+  from the OSC 7 escape sequence that well-configured shells emit on each prompt;
+  shells that don't emit it fall back to home. Either way, the confirmation
+  dialog shows the resolved path as an **editable** field, so you always see and
+  can correct where files will go before sending.
+- **Confirmation** — every operation opens a dialog listing every file that will
+  be transferred, the target host, and the destination. Nothing is sent until
+  you confirm.
+- **Concurrent transfers** — up to 4 files upload in parallel, each using its
+  own SFTP channel over the same SSH connection.
+- **File permissions** — the original Unix file mode is preserved (e.g.,
+  executable scripts stay executable after upload).
+- **Overwrite** — an existing remote file with the same name is overwritten,
+  matching `scp`'s default behavior.
+
+Uploads require the remote server's SFTP subsystem (enabled by default on
+essentially all OpenSSH installations). If it is disabled, the upload fails with
+a clear error and the interactive session is unaffected.
 
 ### AI configuration
 

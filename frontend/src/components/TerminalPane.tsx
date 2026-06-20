@@ -5,9 +5,11 @@ import {WebLinksAddon} from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import * as api from '../lib/api'
 import * as aiApi from '../lib/ai'
+import * as transfer from '../lib/transfer'
 import {subscribe} from '../lib/sessionBus'
 import {useAppStore} from '../state/useAppStore'
 import type {Tab, AIMessage} from '../state/useAppStore'
+import type {PrepareUploadResult} from '../lib/transfer'
 
 // Terminal palette tuned to the spec §9 dark theme.
 const THEME = {
@@ -36,7 +38,7 @@ const THEME = {
 // TerminalPane mounts one xterm.js instance bound to a tab's session. It is
 // kept mounted but hidden when not the active tab (so scrollback survives tab
 // switches). Output arrives via sessionBus; input/resize go back over IPC.
-export default function TerminalPane({tab, visible}: {tab: Tab; visible: boolean}) {
+export default function TerminalPane({tab, visible, onUpload}: {tab: Tab; visible: boolean; onUpload?: (sessionId: string, hostLabel: string, res: PrepareUploadResult) => void}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -225,6 +227,17 @@ export default function TerminalPane({tab, visible}: {tab: Tab; visible: boolean
             title="Paste from clipboard"
           >
             Paste
+          </button>
+          <button
+            onClick={() => {
+              void transfer.pickFilesForUpload(tab.sessionId).then((res) => {
+                if (onUpload) onUpload(tab.sessionId, tab.title, res)
+              })
+            }}
+            className="rounded border border-border bg-surface px-2 py-0.5 text-xs text-muted hover:text-text hover:bg-surface-2"
+            title="Upload files to this server"
+          >
+            Upload
           </button>
         </div>
       )}
