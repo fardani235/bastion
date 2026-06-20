@@ -35,9 +35,6 @@ export interface UploadFileResult {
   error?: string
 }
 
-export const prepareUpload = (sessionId: string, paths: string[]) =>
-  App.PrepareUpload(sessionId, paths) as Promise<PrepareUploadResult>
-
 export const pickFilesForUpload = (sessionId: string) =>
   App.PickFilesForUpload(sessionId) as Promise<PrepareUploadResult>
 

@@ -23,11 +23,11 @@ function humanSize(n: number): string {
 type Phase = 'confirm' | 'uploading' | 'done'
 
 /**
- * UploadModal walks a drop through confirm -> upload -> result. It is given the
- * dropped candidates and the resolved destination (from PrepareUpload), shows an
- * editable destination path, and on confirm streams per-file progress from the
- * backend. The API key/secret boundary is irrelevant here — only paths and byte
- * counts cross IPC.
+ * UploadModal walks a picked selection through confirm -> upload -> result. It
+ * is given the prepared candidates (files, with directories already expanded by
+ * the backend) plus the originally selected paths and the resolved destination,
+ * shows an editable destination path, and on confirm streams per-file progress
+ * from the backend. Only paths and byte counts cross IPC — never file contents.
  */
 export default function UploadModal({
   sessionId,
