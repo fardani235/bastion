@@ -41,6 +41,9 @@ export const prepareUpload = (sessionId: string, paths: string[]) =>
 export const pickFilesForUpload = (sessionId: string) =>
   App.PickFilesForUpload(sessionId) as Promise<PrepareUploadResult>
 
+export const pickFolderForUpload = (sessionId: string) =>
+  App.PickFolderForUpload(sessionId) as Promise<PrepareUploadResult>
+
 export const uploadFiles = (sessionId: string, destDir: string, paths: string[]) =>
   App.UploadFiles(sessionId, destDir, paths) as Promise<string>
 

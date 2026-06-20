@@ -69,12 +69,8 @@ func (a *App) PrepareUpload(sessionID string, paths []string) (PrepareUploadResu
 	}, nil
 }
 
-// PickFilesForUpload opens the OS file chooser, then classifies the selected
-// files exactly as PrepareUpload does. It is the primary entry point for the
-// upload feature: native drag-and-drop is unreliable on Linux/WebKit2GTK (the
-// webview opens dropped files instead of yielding their paths), so file
-// selection goes through this picker. Returns an empty candidate list (no
-// error) when the user cancels the dialog.
+// PickFilesForUpload opens the OS file chooser for selecting one or more files.
+// Returns an empty candidate list (no error) when the user cancels.
 func (a *App) PickFilesForUpload(sessionID string) (PrepareUploadResult, error) {
 	if !a.IsUnlocked() {
 		return PrepareUploadResult{}, errLocked
@@ -87,9 +83,28 @@ func (a *App) PickFilesForUpload(sessionID string) (PrepareUploadResult, error) 
 	if err != nil {
 		return PrepareUploadResult{}, fmt.Errorf("bastion: file picker: %w", err)
 	}
-	// Cancel yields no paths; return an empty (non-error) result so the UI can
-	// simply do nothing.
 	return a.PrepareUpload(sessionID, paths)
+}
+
+// PickFolderForUpload opens the OS directory chooser for selecting a folder.
+// The folder and all its contents are uploaded recursively. Returns an empty
+// candidate list (no error) when the user cancels.
+func (a *App) PickFolderForUpload(sessionID string) (PrepareUploadResult, error) {
+	if !a.IsUnlocked() {
+		return PrepareUploadResult{}, errLocked
+	}
+	defer a.touchAutoLock()
+
+	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select folder to upload",
+	})
+	if err != nil {
+		return PrepareUploadResult{}, fmt.Errorf("bastion: folder picker: %w", err)
+	}
+	if dir == "" {
+		return PrepareUploadResult{}, nil // cancelled
+	}
+	return a.PrepareUpload(sessionID, []string{dir})
 }
 
 // ResolveUploadDir returns the best-known upload destination for a session: the

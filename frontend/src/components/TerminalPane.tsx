@@ -1,4 +1,4 @@
-import {useEffect, useRef} from 'react'
+import {useEffect, useRef, useState} from 'react'
 import {Terminal} from '@xterm/xterm'
 import {FitAddon} from '@xterm/addon-fit'
 import {WebLinksAddon} from '@xterm/addon-web-links'
@@ -41,6 +41,19 @@ const THEME = {
 export default function TerminalPane({tab, visible, onUpload}: {tab: Tab; visible: boolean; onUpload?: (sessionId: string, hostLabel: string, res: PrepareUploadResult) => void}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
+  const [ctxMenu, setCtxMenu] = useState<{x: number; y: number} | null>(null)
+  const ctxRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!ctxMenu) return
+    const handler = (e: MouseEvent) => {
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) {
+        setCtxMenu(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [ctxMenu])
   const fitRef = useRef<FitAddon | null>(null)
   const updateTab = useAppStore((s) => s.updateTab)
   const decoder = useRef(new TextDecoder())
@@ -192,6 +205,21 @@ export default function TerminalPane({tab, visible, onUpload}: {tab: Tab; visibl
     }
   }, [tab.fontSize])
 
+  function ctxItem(label: string, onClick: () => void) {
+    return (
+      <button
+        className="flex w-full items-center px-3 py-1.5 text-left text-xs text-muted hover:bg-surface-2 hover:text-text"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          setCtxMenu(null)
+          onClick()
+        }}
+      >
+        {label}
+      </button>
+    )
+  }
+
   return (
     <div className={`absolute inset-0 ${visible ? 'block' : 'hidden'}`}>
       <div
@@ -199,54 +227,46 @@ export default function TerminalPane({tab, visible, onUpload}: {tab: Tab; visibl
         className="h-full w-full p-2"
         onContextMenu={(e) => {
           e.preventDefault()
-          void api.writeToSession(tab.sessionId, '')
+          if (tab.status === 'connected') setCtxMenu({x: e.clientX, y: e.clientY})
         }}
       />
-      {tab.status === 'connected' && (
-        <div className="absolute right-3 top-1 flex gap-1 opacity-0 hover:opacity-100 transition-opacity">
-          <button
-            onClick={() => {
-              const t = termRef.current
-              if (t?.hasSelection()) {
-                navigator.clipboard.writeText(t.getSelection()).catch(() => {})
-                t.clearSelection()
-              }
-            }}
-            className="rounded border border-border bg-surface px-2 py-0.5 text-xs text-muted hover:text-text hover:bg-surface-2"
-            title="Copy selection"
-          >
-            Copy
-          </button>
-          <button
-            onClick={() => {
-              navigator.clipboard.readText().then((text) => {
-                void api.writeToSession(tab.sessionId, text.replace(/\r?\n/g, '\r'))
-              })
-            }}
-            className="rounded border border-border bg-surface px-2 py-0.5 text-xs text-muted hover:text-text hover:bg-surface-2"
-            title="Paste from clipboard"
-          >
-            Paste
-          </button>
-          <button
-            onClick={() => {
-              void transfer.pickFilesForUpload(tab.sessionId).then((res) => {
-                if (onUpload) onUpload(tab.sessionId, tab.title, res)
-              })
-            }}
-            className="rounded border border-border bg-surface px-2 py-0.5 text-xs text-muted hover:text-text hover:bg-surface-2"
-            title="Upload files to this server"
-          >
-            Upload
-          </button>
-        </div>
-      )}
       {tab.status === 'disconnected' && (
         <DisconnectedOverlay reason={tab.disconnectReason} />
       )}
       {tab.status === 'connecting' && (
         <div className="absolute inset-0 flex items-center justify-center text-sm text-muted">
           Connecting…
+        </div>
+      )}
+      {ctxMenu && (
+        <div
+          ref={ctxRef}
+          className="fixed z-50 w-40 overflow-hidden rounded-md border border-border bg-surface shadow-lg"
+          style={{left: ctxMenu.x, top: ctxMenu.y}}
+        >
+          {ctxItem('Copy', () => {
+            const t = termRef.current
+            if (t?.hasSelection()) {
+              navigator.clipboard.writeText(t.getSelection()).catch(() => {})
+              t.clearSelection()
+            }
+          })}
+          {ctxItem('Paste', () => {
+            navigator.clipboard.readText().then((text) => {
+              void api.writeToSession(tab.sessionId, text.replace(/\r?\n/g, '\r'))
+            })
+          })}
+          <div className="my-1 border-t border-border" />
+          {ctxItem('Upload Files…', () => {
+            void transfer.pickFilesForUpload(tab.sessionId).then((res) => {
+              if (onUpload) onUpload(tab.sessionId, tab.title, res)
+            })
+          })}
+          {ctxItem('Upload Folder…', () => {
+            void transfer.pickFolderForUpload(tab.sessionId).then((res) => {
+              if (onUpload) onUpload(tab.sessionId, tab.title, res)
+            })
+          })}
         </div>
       )}
     </div>

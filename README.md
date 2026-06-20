@@ -43,6 +43,19 @@ frontend) and [xterm.js](https://xtermjs.org).
 - **Auto-lock** — the vault locks on idle timeout and OS screen lock, tearing
   down every live session.
 
+## Demos
+
+<video src="vid2.mp4" width="100%" controls></video>
+*Right-click context menu with Copy, Paste, and upload actions*
+
+<video src="vid1.mp4" width="100%" controls></video>
+*Snippets drawer — save and paste frequently used commands*
+
+<video src="vid0.mp4" width="100%" controls></video>
+*AI command generation and error explanation*
+
+---
+
 ## Security model
 
 | Concern | Approach |
