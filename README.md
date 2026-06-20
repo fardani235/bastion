@@ -23,11 +23,10 @@ frontend) and [xterm.js](https://xtermjs.org).
   `known_hosts` file; a *changed* key is a hard failure, never a silent accept.
 - **Local port forwarding** — define `local → remote` rules per host that start
   and stop with the session, bound to `127.0.0.1` only.
-- **File upload** — upload files and folders to the remote host over SFTP (or
-  native file picker via the toolbar button on each terminal pane, since
-  drag-and-drop is unreliable on Linux/WebKit2GTK). Directories are uploaded
-  recursively with their structure preserved. Reuses the session's existing
-  authenticated connection — no extra password prompt.
+- **File upload** — upload files and folders to the remote host over SFTP via
+  the right-click context menu on any connected terminal. Directories are
+  uploaded recursively with their structure preserved. Reuses the session's
+  existing authenticated connection — no extra password prompt.
 - **Snippets** — save and paste frequently used commands.
 - **AI command generation** — describe what you want and get a shell command,
   powered by OpenAI, Anthropic, or any OpenAI-compatible provider (OpenRouter,
@@ -37,8 +36,9 @@ frontend) and [xterm.js](https://xtermjs.org).
   and suggest a fix.
 - **Per-host font size** — each session remembers its own font size, adjustable
   from the host list context menu.
-- **Copy / paste toolbar** — hover to reveal copy and paste buttons on each
-  terminal pane (no keyboard interception, so vim and other TUI apps work).
+- **Right-click context menu** — right-click any connected terminal to Copy,
+  Paste, or upload files and folders (no keyboard interception, so vim and
+  other TUI apps work).
 - **SSH config import** — scan and import hosts from `~/.ssh/config`.
 - **Auto-lock** — the vault locks on idle timeout and OS screen lock, tearing
   down every live session.
@@ -143,11 +143,9 @@ terminal input — a locked vault never leaves a writable terminal open behind i
 
 ### File upload
 
-Upload files and directories to the remote host via the **Upload** button in the
-Copy/Paste toolbar (hover to reveal) at the top-right of each terminal pane.
-Native drag-and-drop (files → connected terminal) also works on platforms where
-WebKit2GTK supports it; when it does not, the toolbar button opens the OS file
-picker instead.
+Right-click a connected terminal to open the context menu with **Upload Files…**
+and **Upload Folder…** options. Native drag-and-drop (files → connected terminal)
+also works on platforms where WebKit2GTK supports it.
 
 Uploads run over **SFTP on the session's existing SSH connection** — no
 re-authentication, no second password prompt, and file bytes are read by the Go
