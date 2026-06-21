@@ -43,9 +43,13 @@ type App struct {
 	// goroutine (started in startup) listens on its C channel instead of using
 	// AfterFunc, so that touchAutoLock can safely stop/drain/reset without
 	// racing against a previously-fired callback goroutine.
-	autoLockTimer   *time.Timer
-	autoLockTimeout time.Duration
-	autoLockStop    chan struct{}
+	autoLockTimer    *time.Timer
+	autoLockTimeout  time.Duration
+	autoLockStop     chan struct{}
+	autoLockIdleEnabled bool // opt-in: set via vault_meta "auto_lock_idle"
+
+	// autoLockScreensaverEnabled gates the D-Bus screen-saver watcher.
+	autoLockScreensaverEnabled bool // opt-in: set via vault_meta "auto_lock_screensaver"
 
 	screensaverConn     *dbus.Conn
 	screensaverSignalCh chan *dbus.Signal
@@ -104,19 +108,21 @@ func (a *App) startup(ctx context.Context) {
 }
 
 // autoLockLoop listens for the auto-lock timer and locks the vault on expiry.
-// Stopped by closing autoLockStop.
+// Only locks when autoLockIdleEnabled is true (opt-in). Stopped by closing
+// autoLockStop.
 func (a *App) autoLockLoop() {
 	for {
 		select {
 		case <-a.autoLockTimer.C:
 			a.mu.Lock()
+			enabled := a.autoLockIdleEnabled
 			wasUnlocked := a.key != nil
-			if wasUnlocked {
+			if enabled && wasUnlocked {
 				zero(a.key)
 				a.key = nil
 			}
 			a.mu.Unlock()
-			if wasUnlocked {
+			if enabled && wasUnlocked {
 				// Tear down live terminals so the lock isn't merely cosmetic.
 				if a.sessions != nil {
 					a.sessions.CloseAll()
@@ -132,9 +138,13 @@ func (a *App) autoLockLoop() {
 }
 
 // touchAutoLock resets the idle timer. Call from every user-driven IPC method
-// that should count as activity.
+// that should count as activity. No-ops when idle auto-lock is not enabled.
 func (a *App) touchAutoLock() {
 	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.autoLockIdleEnabled {
+		return
+	}
 	if a.autoLockTimer != nil {
 		if !a.autoLockTimer.Stop() {
 			select {
@@ -144,7 +154,6 @@ func (a *App) touchAutoLock() {
 		}
 		a.autoLockTimer.Reset(a.autoLockTimeout)
 	}
-	a.mu.Unlock()
 }
 
 // GetAutoLockSeconds returns the current auto-lock idle timeout.
@@ -170,6 +179,98 @@ func (a *App) SetAutoLockSeconds(secs int) error {
 		}
 		a.autoLockTimer.Reset(a.autoLockTimeout)
 	}
+	a.mu.Unlock()
+	return nil
+}
+
+// loadAutoLockSettings reads the auto-lock preferences from vault_meta. These
+// are opt-in and stored as "1" / "0". Called after a successful Unlock or Setup
+// when the vault is unlocked and the store is readable.
+func (a *App) loadAutoLockSettings() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	raw, ok, _ := a.store.GetMeta(metaAutoLockIdle)
+	a.autoLockIdleEnabled = ok && string(raw) == "1"
+
+	raw, ok, _ = a.store.GetMeta(metaAutoLockScreensaver)
+	a.autoLockScreensaverEnabled = ok && string(raw) == "1"
+
+	// Reset the timer if idle lock is now enabled so the inactivity clock
+	// starts fresh; if disabled, allow any pending fire to be a no-op.
+	if a.autoLockTimer != nil {
+		if !a.autoLockTimer.Stop() {
+			select {
+			case <-a.autoLockTimer.C:
+			default:
+			}
+		}
+		if a.autoLockIdleEnabled {
+			a.autoLockTimer.Reset(a.autoLockTimeout)
+		}
+	}
+}
+
+// GetAutoLockIdleEnabled reports whether idle auto-lock is enabled (opt-in).
+func (a *App) GetAutoLockIdleEnabled() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.autoLockIdleEnabled
+}
+
+// SetAutoLockIdleEnabled enables or disables the idle auto-lock timer. When
+// enabling, the timer is reset so the user gets a full timeout window.
+func (a *App) SetAutoLockIdleEnabled(enabled bool) error {
+	if !a.IsUnlocked() {
+		return errLocked
+	}
+	val := "0"
+	if enabled {
+		val = "1"
+	}
+	if err := a.store.SetMeta(metaAutoLockIdle, []byte(val)); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.autoLockIdleEnabled = enabled
+	if a.autoLockTimer != nil {
+		if !a.autoLockTimer.Stop() {
+			select {
+			case <-a.autoLockTimer.C:
+			default:
+			}
+		}
+		if enabled {
+			a.autoLockTimer.Reset(a.autoLockTimeout)
+		}
+	}
+	a.mu.Unlock()
+	return nil
+}
+
+// GetAutoLockScreensaverEnabled reports whether screen-lock auto-lock is
+// enabled (opt-in).
+func (a *App) GetAutoLockScreensaverEnabled() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.autoLockScreensaverEnabled
+}
+
+// SetAutoLockScreensaverEnabled enables or disables the screen-saver auto-lock
+// trigger.
+func (a *App) SetAutoLockScreensaverEnabled(enabled bool) error {
+	if !a.IsUnlocked() {
+		return errLocked
+	}
+	val := "0"
+	if enabled {
+		val = "1"
+	}
+	if err := a.store.SetMeta(metaAutoLockScreensaver, []byte(val)); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.autoLockScreensaverEnabled = enabled
 	a.mu.Unlock()
 	return nil
 }
@@ -244,8 +345,9 @@ func (a *App) watchScreenSaver() {
 				continue
 			}
 			a.mu.Lock()
+			enabled := a.autoLockScreensaverEnabled
 			wasUnlocked := a.key != nil
-			if wasUnlocked {
+			if enabled && wasUnlocked {
 				zero(a.key)
 				a.key = nil
 				if a.autoLockTimer != nil {
@@ -253,7 +355,7 @@ func (a *App) watchScreenSaver() {
 				}
 			}
 			a.mu.Unlock()
-			if wasUnlocked {
+			if enabled && wasUnlocked {
 				if a.sessions != nil {
 					a.sessions.CloseAll()
 				}

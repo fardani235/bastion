@@ -19,7 +19,9 @@ const (
 	metaKDFMemory     = "kdf_memory"
 	metaKDFThreads    = "kdf_threads"
 	metaSchemaVersion = "schema_version"
-	metaSessionLog    = "session_logging" // "1" = enabled; absent/"0" = disabled
+	metaSessionLog         = "session_logging"         // "1" = enabled; absent/"0" = disabled
+	metaAutoLockIdle       = "auto_lock_idle"          // "1" = enabled; absent/"0" = disabled (opt-in)
+	metaAutoLockScreensaver = "auto_lock_screensaver"  // "1" = enabled; absent/"0" = disabled (opt-in)
 )
 
 const schemaVersion = 2
@@ -92,9 +94,17 @@ func (a *App) Setup(password string) error {
 	if err := a.store.SetMeta(metaSchemaVersion, []byte(strconv.Itoa(schemaVersion))); err != nil {
 		return err
 	}
+	if err := a.store.SetMeta(metaAutoLockIdle, []byte("0")); err != nil {
+		return err
+	}
+	if err := a.store.SetMeta(metaAutoLockScreensaver, []byte("0")); err != nil {
+		return err
+	}
 
 	a.mu.Lock()
 	a.key = key
+	a.autoLockIdleEnabled = false
+	a.autoLockScreensaverEnabled = false
 	a.mu.Unlock()
 	return nil
 }
@@ -168,6 +178,8 @@ func (a *App) Unlock(password string) error {
 	a.mu.Lock()
 	a.key = key
 	a.mu.Unlock()
+
+	a.loadAutoLockSettings()
 	return nil
 }
 

@@ -1,6 +1,7 @@
 import {useEffect, useState} from 'react'
 import {useAppStore} from '../state/useAppStore'
 import AboutModal from './AboutModal'
+import SettingsModal from './SettingsModal'
 
 // StatusBar is the thin bottom bar: active session count with longest uptime,
 // active forward count, a snippets toggle, and the lock button.
@@ -14,6 +15,7 @@ export default function StatusBar({onLock}: {onLock: () => void}) {
   const toggleAI = useAppStore((s) => s.toggleAI)
   const liveCount = tabs.filter((t) => t.status === 'connected').length
   const [showAbout, setShowAbout] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   useEffect(() => {
     void refreshActiveForwards()
@@ -60,11 +62,15 @@ export default function StatusBar({onLock}: {onLock: () => void}) {
         <button onClick={() => setShowAbout(true)} className="hover:text-text" title="About">
           About
         </button>
+        <button onClick={() => setShowSettings(true)} className="hover:text-text" title="Settings">
+          Settings
+        </button>
         <button onClick={onLock} className="hover:text-accent" title="Lock vault">
           Lock
         </button>
       </div>
       {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </>
   )
 }

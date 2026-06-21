@@ -55,6 +55,12 @@ export const updateSnippet = (id: string, label: string, body: string) =>
   App.UpdateSnippet(id, label, body)
 export const deleteSnippet = (id: string) => App.DeleteSnippet(id)
 
+// --- Auto-Lock Settings ---
+export const getAutoLockIdleEnabled = () => App.GetAutoLockIdleEnabled()
+export const setAutoLockIdleEnabled = (enabled: boolean) => App.SetAutoLockIdleEnabled(enabled)
+export const getAutoLockScreensaverEnabled = () => App.GetAutoLockScreensaverEnabled()
+export const setAutoLockScreensaverEnabled = (enabled: boolean) => App.SetAutoLockScreensaverEnabled(enabled)
+
 // --- Port Forwards ---
 export interface PortForwardDTO {
   id: string

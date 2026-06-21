@@ -77,6 +77,11 @@ interface AppState {
   // Snippets drawer.
   toggleSnippets: () => void
 
+  // Auto-lock settings.
+  autoLockIdleEnabled: boolean
+  autoLockScreensaverEnabled: boolean
+  refreshAutoLockSettings: () => Promise<void>
+
   // AI drawer.
   aiOpen: boolean
   aiConfigured: boolean
@@ -113,7 +118,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const results = await Promise.allSettled([
       get().refreshHosts(), get().refreshGroups(),
       get().refreshSnippets(), get().refreshActiveForwards(),
-      get().refreshSessionHealth(),
+      get().refreshSessionHealth(), get().refreshAutoLockSettings(),
     ])
     for (const r of results) if (r.status === 'rejected') console.error('refreshAll:', r.reason)
   },
@@ -156,6 +161,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPendingUpload: (p) => set({pendingUpload: p}),
 
   toggleSnippets: () => set((s) => ({snippetsOpen: !s.snippetsOpen, aiOpen: false})),
+
+  // Auto-lock settings.
+  autoLockIdleEnabled: false,
+  autoLockScreensaverEnabled: false,
+  refreshAutoLockSettings: async () => {
+    try {
+      const [idle, screensaver] = await Promise.all([
+        api.getAutoLockIdleEnabled(),
+        api.getAutoLockScreensaverEnabled(),
+      ])
+      set({autoLockIdleEnabled: idle, autoLockScreensaverEnabled: screensaver})
+    } catch {
+      set({autoLockIdleEnabled: false, autoLockScreensaverEnabled: false})
+    }
+  },
 
   // AI drawer.
   aiOpen: false,
