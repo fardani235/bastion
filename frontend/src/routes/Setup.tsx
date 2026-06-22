@@ -35,8 +35,9 @@ export default function Setup({onDone}: {onDone: () => void}) {
   return (
     <div className="flex h-full items-center justify-center bg-bg">
       <div className="w-[380px] rounded-xl border border-border bg-surface p-7 shadow-xl">
-        <h1 className="mb-1 font-mono text-xl text-accent">bastion</h1>
-        <p className="mb-5 text-sm text-muted">Create your master password to set up the vault.</p>
+        <img src="/icon64.png" alt="" className="mx-auto mb-3 h-16 w-16" />
+        <h1 className="mb-1 text-center font-mono text-xl text-accent">bastion</h1>
+        <p className="mb-5 text-center text-sm text-muted">Create your master password to set up the vault.</p>
 
         <label className="mb-1 block text-xs text-muted">Master password</label>
         <input

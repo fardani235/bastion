@@ -25,8 +25,9 @@ export default function Unlock({onDone}: {onDone: () => void}) {
   return (
     <div className="flex h-full items-center justify-center bg-bg">
       <div className="w-[360px] rounded-xl border border-border bg-surface p-7 shadow-xl">
-        <h1 className="mb-1 font-mono text-xl text-accent">bastion</h1>
-        <p className="mb-5 text-sm text-muted">Enter your master password to unlock.</p>
+        <img src="/icon64.png" alt="" className="mx-auto mb-3 h-16 w-16" />
+        <h1 className="mb-1 text-center font-mono text-xl text-accent">bastion</h1>
+        <p className="mb-5 text-center text-sm text-muted">Enter your master password to unlock.</p>
 
         <input
           type="password"
