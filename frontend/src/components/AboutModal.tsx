@@ -15,7 +15,7 @@ export default function AboutModal({onClose}: {onClose: () => void}) {
             <li>Host and group management</li>
             <li>Snippet manager for quick command insertion</li>
             <li>Local port forwarding with auto-start on connect</li>
-            <li>File and folder upload to the remote host over SFTP (recursive, from the terminal context menu)</li>
+            <li>File and folder upload/download to/from the remote host over SFTP (recursive, from the terminal context menu — remote file browser for download)</li>
             <li>Auto-lock on inactivity and screen lock</li>
             <li>SSH config import (~/.ssh/config)</li>
             <li>Session logging with auto-rotated log files</li>

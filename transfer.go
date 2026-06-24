@@ -200,3 +200,158 @@ func (a *App) UploadFiles(sessionID, destDir string, paths []string) (string, er
 
 	return transferID, nil
 }
+
+// validateLocalDir rejects an empty or control-character-bearing local path,
+// mirroring validateDestDir for the download direction.
+func validateLocalDir(dir string) error {
+	if strings.TrimSpace(dir) == "" {
+		return fmt.Errorf("bastion: local directory must not be empty")
+	}
+	for i := 0; i < len(dir); i++ {
+		if dir[i] < ' ' || dir[i] == 0x7f {
+			return fmt.Errorf("bastion: local directory contains control characters")
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Download
+// ---------------------------------------------------------------------------
+
+// DownloadCandidate is the frontend-facing preview of one remote file, returned
+// by PrepareDownload. Directories are expanded recursively so the confirm
+// dialog lists every file that will be transferred.
+type DownloadCandidate struct {
+	Path string `json:"path"` // remote path
+	Name string `json:"name"` // display name (base name for top-level; rel-path within dir)
+	Size int64  `json:"size"` // bytes
+}
+
+type PrepareDownloadResult struct {
+	Candidates []DownloadCandidate `json:"candidates"`
+	Paths      []string            `json:"paths"`
+}
+
+func (a *App) ListRemoteDir(sessionID, path string) ([]appssh.RemoteEntry, error) {
+	if !a.IsUnlocked() {
+		return nil, errLocked
+	}
+	defer a.touchAutoLock()
+
+	client, ok := a.sessions.Client(sessionID)
+	if !ok {
+		return nil, fmt.Errorf("bastion: unknown or closed session %q", sessionID)
+	}
+
+	return appssh.NewDownloader(client).ReadDir(path)
+}
+
+func (a *App) PrepareDownload(sessionID string, paths []string) (PrepareDownloadResult, error) {
+	if !a.IsUnlocked() {
+		return PrepareDownloadResult{}, errLocked
+	}
+	defer a.touchAutoLock()
+
+	client, ok := a.sessions.Client(sessionID)
+	if !ok {
+		return PrepareDownloadResult{}, fmt.Errorf("bastion: unknown or closed session %q", sessionID)
+	}
+
+	downloader := appssh.NewDownloader(client)
+	var allFiles []appssh.CollectedFile
+	for _, p := range paths {
+		files, err := downloader.CollectRemotePaths([]string{p})
+		if err != nil {
+			continue
+		}
+		allFiles = append(allFiles, files...)
+	}
+
+	candidates := make([]DownloadCandidate, len(allFiles))
+	for i, f := range allFiles {
+		candidates[i] = DownloadCandidate{
+			Path: f.LocalPath,
+			Name: f.RemoteName,
+			Size: f.Size,
+		}
+	}
+
+	return PrepareDownloadResult{
+		Candidates: candidates,
+		Paths:      paths,
+	}, nil
+}
+
+// PickDownloadDestination opens the OS folder picker for choosing a local
+// download directory.
+func (a *App) PickDownloadDestination(_ string) (string, error) {
+	if !a.IsUnlocked() {
+		return "", errLocked
+	}
+	defer a.touchAutoLock()
+
+	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select download destination",
+	})
+	if err != nil {
+		return "", fmt.Errorf("bastion: folder picker: %w", err)
+	}
+	return dir, nil
+}
+
+// DownloadFiles downloads the given remote paths (files and/or directories)
+// into localDir over SFTP, reusing the live SSH connection. Directories are
+// walked recursively. It returns a transfer ID immediately and runs the
+// transfer concurrently in the background, emitting download:progress:<id>
+// events during and a download:done:<id> event on completion.
+func (a *App) DownloadFiles(sessionID, localDir string, paths []string) (string, error) {
+	if !a.IsUnlocked() {
+		return "", errLocked
+	}
+	defer a.touchAutoLock()
+
+	if err := validateLocalDir(localDir); err != nil {
+		return "", err
+	}
+	if len(paths) == 0 {
+		return "", fmt.Errorf("bastion: no files to download")
+	}
+
+	client, ok := a.sessions.Client(sessionID)
+	if !ok {
+		return "", fmt.Errorf("bastion: unknown or closed session %q", sessionID)
+	}
+
+	downloader := appssh.NewDownloader(client)
+	files, err := downloader.CollectRemotePaths(paths)
+	if err != nil {
+		return "", fmt.Errorf("bastion: collect remote files: %w", err)
+	}
+	if len(files) == 0 {
+		return "", fmt.Errorf("bastion: no downloadable files (non-regular files are skipped)")
+	}
+
+	transferID := uuid.NewString()
+
+	go func() {
+		log.Printf("[download] %s: %d file(s) -> %s from session %s", transferID, len(files), localDir, sessionID)
+		progress := func(p appssh.DownloadProgress) {
+			if a.emitter != nil {
+				a.emitter.EmitDownloadProgress(p)
+			}
+		}
+		results, err := downloader.Download(transferID, localDir, files, progress)
+		if err != nil {
+			results = make([]appssh.DownloadFileResult, 0, len(files))
+			for _, f := range files {
+				results = append(results, appssh.DownloadFileResult{Name: f.RemoteName, Error: err.Error()})
+			}
+		}
+		if a.emitter != nil {
+			a.emitter.EmitDownloadDone(transferID, results)
+		}
+	}()
+
+	return transferID, nil
+}

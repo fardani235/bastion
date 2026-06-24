@@ -23,10 +23,12 @@ frontend) and [xterm.js](https://xtermjs.org).
   `known_hosts` file; a *changed* key is a hard failure, never a silent accept.
 - **Local port forwarding** — define `local → remote` rules per host that start
   and stop with the session, bound to `127.0.0.1` only.
-- **File upload** — upload files and folders to the remote host over SFTP via
-  the right-click context menu on any connected terminal. Directories are
-  uploaded recursively with their structure preserved. Reuses the session's
-  existing authenticated connection — no extra password prompt.
+- **File upload & download** — transfer files and folders to/from the remote
+  host over SFTP via the right-click context menu on any connected terminal.
+  Upload opens the native OS file/folder picker; download opens a remote file
+  browser with directory navigation and multi-select. Directories are
+  transferred recursively with their structure preserved. Both reuse the
+  session's existing authenticated connection — no extra password prompt.
 - **Snippets** — save and paste frequently used commands.
 - **AI command generation** — describe what you want and get a shell command,
   powered by OpenAI, Anthropic, or any OpenAI-compatible provider (OpenRouter,
@@ -37,8 +39,9 @@ frontend) and [xterm.js](https://xtermjs.org).
 - **Per-host font size** — each session remembers its own font size, adjustable
   from the host list context menu.
 - **Right-click context menu** — right-click any connected terminal to Copy,
-  Paste, or upload files and folders (no keyboard interception, so vim and
-  other TUI apps work).
+  Paste, upload files and folders, or download files and folders via a
+  remote file browser (no keyboard interception, so vim and other TUI apps
+  work).
 - **SSH config import** — scan and import hosts from `~/.ssh/config`.
 - **Auto-lock** — the vault locks on idle timeout and OS screen lock, tearing
   down every live session.
@@ -109,7 +112,7 @@ sessions.go        — OpenSession, host-key trust, terminal I/O IPC
 crud.go            — groups & snippets IPC
 portforwards.go    — port-forward config IPC
 hosts_import.go    — ~/.ssh/config scan & import
-transfer.go        — file-upload IPC: PrepareUpload, UploadFiles, ResolveUploadDir
+transfer.go        — file upload & download IPC: PrepareUpload, UploadFiles, ListRemoteDir, DownloadFiles
 ai.go              — AI IPC: GenerateCommand, ExplainError, Get/SetAIConfig, TestAIConnection
 emitter.go         — Wails event emitter + optional session logging
 session_health.go  — live session info
@@ -141,41 +144,62 @@ configurable via `SetAutoLockSeconds`, minimum 60s) and when the OS screensaver
 activates. **Locking closes every live SSH session** and rejects further
 terminal input — a locked vault never leaves a writable terminal open behind it.
 
-### File upload
+### File transfer (upload & download)
 
-Right-click a connected terminal to open the context menu with **Upload Files…**
-and **Upload Folder…** options, each opening the native OS picker. (Drag-and-drop
-onto the terminal is intentionally not used: on Linux/WebKit2GTK the webview
-opens a dropped file instead of yielding its path, so file selection goes through
-the picker.)
+Right-click a connected terminal to open the context menu with file transfer
+options. (Drag-and-drop onto the terminal is intentionally not used: on
+Linux/WebKit2GTK the webview opens a dropped file instead of yielding its path,
+so file selection goes through the picker.)
 
-Uploads run over **SFTP on the session's existing SSH connection** — no
-re-authentication, no second password prompt, and file bytes are read by the Go
-backend directly (they never pass through the renderer).
+All transfers run over **SFTP on the session's existing SSH connection** — no
+re-authentication, no second password prompt, and file bytes are read/written by
+the Go backend directly (they never pass through the renderer).
 
-- **Directories** — folders are uploaded recursively. Their structure is
-  preserved on the remote side: uploading `project/` with `src/main.go` and
-  `README.md` lands as `destDir/project/src/main.go` and
-  `destDir/project/README.md`.
+#### Upload
+
+**Upload Files…** and **Upload Folder…** each open the native OS file/folder
+picker and show a confirmation dialog listing every file, the target host, and
+the destination directory before sending.
+
 - **Destination** — files land in the shell's current working directory when it
   can be determined, otherwise the remote home directory. The CWD is tracked
   from the OSC 7 escape sequence that well-configured shells emit on each prompt;
   shells that don't emit it fall back to home. Either way, the confirmation
   dialog shows the resolved path as an **editable** field, so you always see and
   can correct where files will go before sending.
-- **Confirmation** — every operation opens a dialog listing every file that will
-  be transferred, the target host, and the destination. Nothing is sent until
-  you confirm.
-- **Concurrent transfers** — up to 4 files upload in parallel, each using its
-  own SFTP channel over the same SSH connection.
+- **Directories** — folders are uploaded recursively. Their structure is
+  preserved on the remote side: uploading `project/` with `src/main.go` and
+  `README.md` lands as `destDir/project/src/main.go` and
+  `destDir/project/README.md`.
 - **File permissions** — the original Unix file mode is preserved (e.g.,
   executable scripts stay executable after upload).
 - **Overwrite** — an existing remote file with the same name is overwritten,
   matching `scp`'s default behavior.
 
-Uploads require the remote server's SFTP subsystem (enabled by default on
-essentially all OpenSSH installations). If it is disabled, the upload fails with
-a clear error and the interactive session is unaffected.
+#### Download
+
+**Download…** opens a remote file browser dialog that lets you navigate the
+remote filesystem over SFTP, select files and directories, pick a local
+destination folder, and download with live per-file progress bars.
+
+- **File browser** — directories and files are listed with sizes and modification
+  times. Click a directory to navigate into it; use the path bar or the "Go up"
+  arrow to move around. The path input is editable for quick jumps.
+- **Selection** — tick the checkboxes next to files and folders. Folders are
+  downloaded recursively. The button shows the count of selected files and
+  folders.
+- **Local destination** — choose a local folder via the native OS folder picker
+  or type the path directly.
+- **Progress** — each file shows an individual progress bar updated every 64 KiB.
+  Failed files are marked with their error message; successful transfers show a
+  checkmark.
+- **Structure preservation** — downloading a remote directory recreates its
+  layout locally. For example, downloading `project/` with `src/main.go` lands
+  as `<localDir>/project/src/main.go`.
+- **File permissions** — the original Unix file mode is preserved.
+- **Safety** — path traversal is prevented at the backend: filenames containing
+  `..` are rejected, and the resolved local path is verified to stay within the
+  chosen destination.
 
 ### AI configuration
 

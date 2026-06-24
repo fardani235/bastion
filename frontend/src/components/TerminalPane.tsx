@@ -38,7 +38,7 @@ const THEME = {
 // TerminalPane mounts one xterm.js instance bound to a tab's session. It is
 // kept mounted but hidden when not the active tab (so scrollback survives tab
 // switches). Output arrives via sessionBus; input/resize go back over IPC.
-export default function TerminalPane({tab, visible, onUpload}: {tab: Tab; visible: boolean; onUpload?: (sessionId: string, hostLabel: string, res: PrepareUploadResult) => void}) {
+export default function TerminalPane({tab, visible, onUpload, onDownload}: {tab: Tab; visible: boolean; onUpload?: (sessionId: string, hostLabel: string, res: PrepareUploadResult) => void; onDownload?: (sessionId: string, hostLabel: string) => void}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const [ctxMenu, setCtxMenu] = useState<{x: number; y: number} | null>(null)
@@ -266,6 +266,9 @@ export default function TerminalPane({tab, visible, onUpload}: {tab: Tab; visibl
             void transfer.pickFolderForUpload(tab.sessionId).then((res) => {
               if (onUpload) onUpload(tab.sessionId, tab.title, res)
             })
+          })}
+          {ctxItem('Download…', () => {
+            if (onDownload) onDownload(tab.sessionId, tab.title)
           })}
         </div>
       )}

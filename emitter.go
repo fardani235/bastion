@@ -59,6 +59,14 @@ func (e *wailsEmitter) EmitUploadDone(transferID string, results []appssh.Upload
 	runtime.EventsEmit(e.ctx, "upload:done:"+transferID, results)
 }
 
+func (e *wailsEmitter) EmitDownloadProgress(p appssh.DownloadProgress) {
+	runtime.EventsEmit(e.ctx, "download:progress:"+p.TransferID, p)
+}
+
+func (e *wailsEmitter) EmitDownloadDone(transferID string, results []appssh.DownloadFileResult) {
+	runtime.EventsEmit(e.ctx, "download:done:"+transferID, results)
+}
+
 // OpenLog creates a log file for the given session and starts writing output.
 func (e *wailsEmitter) OpenLog(sessionID, label string) error {
 	if e.logDir == "" {

@@ -3,6 +3,7 @@ import {useAppStore} from '../state/useAppStore'
 import TerminalPane from './TerminalPane'
 import TrustHostKeyModal from './TrustHostKeyModal'
 import UploadModal from './UploadModal'
+import RemoteFileBrowserModal from './RemoteFileBrowserModal'
 import type {UploadCandidate} from '../lib/transfer'
 
 // A pending upload: the active session plus the prepared candidates/paths from
@@ -29,6 +30,7 @@ export default function TerminalArea() {
   const activeTabId = useAppStore((s) => s.activeTabId)
   const trustPrompt = useAppStore((s) => s.trustPrompt)
   const [upload, setUpload] = useState<PendingUpload | null>(null)
+  const [download, setDownload] = useState<{sessionId: string; hostLabel: string} | null>(null)
 
   return (
     <div className="relative min-h-0 flex-1 bg-bg">
@@ -46,6 +48,7 @@ export default function TerminalArea() {
             if (res.candidates.length === 0) return
             setUpload({sessionId, hostLabel, destDir: res.destDir, candidates: res.candidates, paths: res.paths})
           }}
+          onDownload={(sessionId, hostLabel) => setDownload({sessionId, hostLabel})}
         />
       ))}
       {trustPrompt && <TrustHostKeyModal />}
@@ -57,6 +60,13 @@ export default function TerminalArea() {
           candidates={upload.candidates}
           paths={upload.paths}
           onClose={() => setUpload(null)}
+        />
+      )}
+      {download && (
+        <RemoteFileBrowserModal
+          sessionId={download.sessionId}
+          hostLabel={download.hostLabel}
+          onClose={() => setDownload(null)}
         />
       )}
     </div>
