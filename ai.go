@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -47,10 +48,10 @@ func validateAIEndpoint(endpoint string) error {
 	}
 }
 
-// AICommandResult is returned by GenerateCommand.
-type AICommandResult struct {
-	Command     string `json:"command"`
-	Explanation string `json:"explanation"`
+// ChatResult is returned by the Chat IPC method.
+type ChatResult struct {
+	Reply   string `json:"reply"`
+	Command string `json:"command,omitempty"`
 }
 
 // AIErrorResult is returned by ExplainError.
@@ -168,7 +169,6 @@ func (a *App) SetAIConfig(provider, model, endpoint, apiKey, systemPrompt string
 	}
 
 	if apiKey == "" {
-		// Inherit the previously stored key rather than clobbering it with empty.
 		prev, err := a.readAIConfig()
 		if err != nil {
 			return err
@@ -176,14 +176,19 @@ func (a *App) SetAIConfig(provider, model, endpoint, apiKey, systemPrompt string
 		apiKey = prev.APIKey
 	}
 
-	return a.writeAIConfig(ai.AIConfig{
+	if err := a.writeAIConfig(ai.AIConfig{
 		Provider:          provider,
 		Model:             model,
 		Endpoint:          endpoint,
 		APIKey:            apiKey,
 		SystemPrompt:      systemPrompt,
 		AutoExplainErrors: autoExplainErrors,
-	})
+	}); err != nil {
+		return err
+	}
+
+	_ = a.initAIChat()
+	return nil
 }
 
 // GetAIConfigStatus reports whether an AI config has been saved.
@@ -201,21 +206,21 @@ func (a *App) GetAIConfigStatus() (AIConfigStatus, error) {
 	}, nil
 }
 
-// GenerateCommand sends a natural-language prompt to the AI and returns a shell
-// command. sessionID is used for context (host label available from the session
-// manager, but unused here — the caller can include it in the prompt).
-func (a *App) GenerateCommand(sessionID, prompt string) (AICommandResult, error) {
+// NewChat creates a new AI chat session with conversation memory. Returns the
+// session ID. The system prompt is loaded from the stored config; blank uses
+// the default command-generation prompt.
+func (a *App) NewChat() (string, error) {
 	if !a.IsUnlocked() {
-		return AICommandResult{}, errLocked
+		return "", errLocked
 	}
 	defer a.touchAutoLock()
 
 	cfg, err := a.readAIConfig()
 	if err != nil {
-		return AICommandResult{}, err
+		return "", err
 	}
 	if cfg.APIKey == "" {
-		return AICommandResult{}, fmt.Errorf("bastion: AI not configured")
+		return "", fmt.Errorf("bastion: AI not configured")
 	}
 
 	sysPrompt := cfg.SystemPrompt
@@ -223,20 +228,50 @@ func (a *App) GenerateCommand(sessionID, prompt string) (AICommandResult, error)
 		sysPrompt = ai.SystemPromptCommand
 	}
 
-	messages := []ai.Message{
-		{Role: "user", Content: prompt},
+	if a.aiChat == nil {
+		if err := a.initAIChat(); err != nil {
+			return "", err
+		}
 	}
 
-	reply, err := ai.Chat(cfg, messages, sysPrompt)
+	return a.aiChat.NewSession(sysPrompt), nil
+}
+
+// Chat sends a message in an existing AI chat session and returns the reply
+// with context from the conversation history.
+func (a *App) Chat(chatID, message string) (ChatResult, error) {
+	if !a.IsUnlocked() {
+		return ChatResult{}, errLocked
+	}
+	defer a.touchAutoLock()
+
+	if a.aiChat == nil {
+		return ChatResult{}, fmt.Errorf("bastion: AI not configured")
+	}
+
+	result, err := a.aiChat.SendMessage(context.Background(), chatID, message)
 	if err != nil {
-		return AICommandResult{}, fmt.Errorf("bastion: ai command: %w", err)
+		return ChatResult{}, fmt.Errorf("bastion: ai chat: %w", err)
 	}
 
-	result := AICommandResult{Explanation: reply}
-	// Try to extract a shell command from the reply. The prompt instructs the
-	// AI to wrap commands in ```shell ... ```. We extract it for the UI.
-	result.Command = extractShellCommand(reply)
-	return result, nil
+	return ChatResult{
+		Reply:   result.Reply,
+		Command: extractShellCommand(result.Reply),
+	}, nil
+}
+
+// ClearChat clears the conversation history for an AI chat session.
+func (a *App) ClearChat(chatID string) error {
+	if !a.IsUnlocked() {
+		return errLocked
+	}
+	defer a.touchAutoLock()
+
+	if a.aiChat == nil {
+		return fmt.Errorf("bastion: AI not configured")
+	}
+
+	return a.aiChat.ClearHistory(context.Background(), chatID)
 }
 
 // ExplainError sends recent terminal output containing an error to the AI for

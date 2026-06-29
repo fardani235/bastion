@@ -34,7 +34,9 @@ func main() {
 		},
 		Mac: &mac.Options{
 			About: &mac.AboutInfo{
-				Icon: appIcon,
+				Title:   "Bastion",
+				Message: "SSH connection manager with an encrypted vault and AI chatbot",
+				Icon:    appIcon,
 			},
 		},
 		Windows: &windows.Options{

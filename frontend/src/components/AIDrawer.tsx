@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from 'react'
+import {useCallback, useEffect, useRef, useState} from 'react'
 import {useAppStore} from '../state/useAppStore'
 import type {AIMessage} from '../state/useAppStore'
 import * as aiApi from '../lib/ai'
@@ -12,7 +12,9 @@ function nextId() {
 }
 
 // AIDrawer slides in from the right with a WhatsApp-style chat interface for
-// AI command generation and error suggestions.
+// AI command generation and error suggestions. Conversations are stateful on
+// the backend (LangChain ConversationBuffer memory) so the AI understands
+// context across messages.
 export default function AIDrawer() {
   const open = useAppStore((s) => s.aiOpen)
   const toggle = useAppStore((s) => s.toggleAI)
@@ -21,6 +23,8 @@ export default function AIDrawer() {
   const clearMessages = useAppStore((s) => s.clearAIMessages)
   const aiConfigured = useAppStore((s) => s.aiConfigured)
   const refreshAIConfig = useAppStore((s) => s.refreshAIConfig)
+  const aiChatId = useAppStore((s) => s.aiChatId)
+  const setAIChatId = useAppStore((s) => s.setAIChatId)
   const tabs = useAppStore((s) => s.tabs)
   const activeTabId = useAppStore((s) => s.activeTabId)
 
@@ -31,10 +35,22 @@ export default function AIDrawer() {
 
   const activeTab = tabs.find((t) => t.tabId === activeTabId)
 
-  // Refresh AI config status when drawer opens.
+  // Refresh AI config and create a backend chat session when drawer opens.
+  const initChat = useCallback(async () => {
+    await refreshAIConfig()
+    if (useAppStore.getState().aiConfigured) {
+      try {
+        const id = await aiApi.newChat()
+        setAIChatId(id)
+      } catch {
+        // Not configured — leave defaults.
+      }
+    }
+  }, [refreshAIConfig, setAIChatId])
+
   useEffect(() => {
-    if (open) void refreshAIConfig()
-  }, [open, refreshAIConfig])
+    if (open) void initChat()
+  }, [open, initChat])
 
   // Auto-scroll to bottom when new messages arrive.
   useEffect(() => {
@@ -47,7 +63,6 @@ export default function AIDrawer() {
     const text = input.trim()
     if (!text || busy) return
     setInput('')
-    if (!activeTab?.sessionId) return
 
     const userMsg: AIMessage = {
       id: nextId(),
@@ -59,11 +74,11 @@ export default function AIDrawer() {
     setBusy(true)
 
     try {
-      const result = await aiApi.generateCommand(activeTab.sessionId, text)
+      const result = await aiApi.chat(aiChatId!, text)
       const reply: AIMessage = {
         id: nextId(),
         role: 'assistant',
-        content: result.explanation,
+        content: result.reply,
         command: result.command || undefined,
         timestamp: Date.now(),
       }
@@ -85,6 +100,23 @@ export default function AIDrawer() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       void handleSend()
+    }
+  }
+
+  async function handleClear() {
+    if (aiChatId) {
+      try {
+        await aiApi.clearChat(aiChatId)
+      } catch {
+        // Session may already be gone.
+      }
+    }
+    clearMessages()
+    try {
+      const id = await aiApi.newChat()
+      setAIChatId(id)
+    } catch {
+      setAIChatId(null)
     }
   }
 
@@ -111,7 +143,7 @@ export default function AIDrawer() {
             >
               Settings
             </button>
-            <button onClick={clearMessages} className="text-muted hover:text-text" title="Clear conversation">
+            <button onClick={handleClear} className="text-muted hover:text-text" title="Clear conversation">
               Clear
             </button>
             <button onClick={toggle} className="text-muted hover:text-text" title="Close">

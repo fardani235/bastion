@@ -1,36 +1,22 @@
 package ai
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"time"
-)
 
-const requestTimeout = 30 * time.Second
+	"github.com/tmc/langchaingo/llms"
+	"github.com/tmc/langchaingo/llms/anthropic"
+	"github.com/tmc/langchaingo/llms/openai"
+)
 
 // AIConfig holds the user's AI provider settings, encrypted in vault_meta.
 type AIConfig struct {
-	Provider     string `json:"provider"`                // "openai", "anthropic", "openai-compatible"
+	Provider     string `json:"provider"`
 	Model        string `json:"model"`
-	Endpoint     string `json:"endpoint,omitempty"`      // custom endpoint for openai-compatible
+	Endpoint     string `json:"endpoint,omitempty"`
 	APIKey       string `json:"apiKey"`
-	SystemPrompt string `json:"systemPrompt,omitempty"`  // custom system prompt; empty = use default
-	// AutoExplainErrors enables automatically sending terminal output to the
-	// provider when an error pattern is detected. It is OFF by default: auto
-	// detection ships screen content (hostnames, file contents, echoed secrets)
-	// to a third party without a per-event prompt, so the user must opt in.
+	SystemPrompt string `json:"systemPrompt,omitempty"`
 	AutoExplainErrors bool `json:"autoExplainErrors,omitempty"`
-}
-
-// CompletionRequest is the payload for the chat completion endpoint.
-type CompletionRequest struct {
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
-	Temperature float64   `json:"temperature,omitempty"`
-	MaxTokens   int       `json:"max_tokens,omitempty"`
 }
 
 // Message is a single turn in the chat.
@@ -39,157 +25,75 @@ type Message struct {
 	Content string `json:"content"`
 }
 
-// completionResponse is the response from the LLM API.
-type completionResponse struct {
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
-}
-
-// anthropicRequest is the payload for Anthropic's Messages API.
-type anthropicRequest struct {
-	Model       string           `json:"model"`
-	MaxTokens   int              `json:"max_tokens"`
-	Messages    []anthropicMsg   `json:"messages"`
-	System      string           `json:"system,omitempty"`
-	Temperature float64          `json:"temperature,omitempty"`
-}
-
-type anthropicMsg struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type anthropicResponse struct {
-	Content []struct {
-		Text string `json:"text"`
-	} `json:"content"`
+// newLLM creates a LangChain llms.Model from the given config.
+func newLLM(cfg AIConfig) (llms.Model, error) {
+	switch cfg.Provider {
+	case "openai":
+		opts := []openai.Option{
+			openai.WithToken(cfg.APIKey),
+			openai.WithModel(cfg.Model),
+		}
+		if cfg.Endpoint != "" {
+			opts = append(opts, openai.WithBaseURL(cfg.Endpoint))
+		}
+		return openai.New(opts...)
+	case "anthropic":
+		opts := []anthropic.Option{
+			anthropic.WithToken(cfg.APIKey),
+			anthropic.WithModel(cfg.Model),
+		}
+		return anthropic.New(opts...)
+	case "openai-compatible":
+		opts := []openai.Option{
+			openai.WithToken(cfg.APIKey),
+			openai.WithModel(cfg.Model),
+		}
+		if cfg.Endpoint != "" {
+			opts = append(opts, openai.WithBaseURL(cfg.Endpoint))
+		} else {
+			opts = append(opts, openai.WithBaseURL("http://localhost:11434/v1"))
+		}
+		return openai.New(opts...)
+	default:
+		return nil, fmt.Errorf("ai: unknown provider %q", cfg.Provider)
+	}
 }
 
 // Chat calls the configured LLM with a list of messages and returns the
-// response text. Supports OpenAI, Anthropic, and OpenAI-compatible APIs.
+// response text. This is a stateless helper used by ExplainError and
+// TestAIConnection. For stateful conversations use SessionManager.
 func Chat(cfg AIConfig, messages []Message, systemPrompt string) (string, error) {
-	switch cfg.Provider {
-	case "openai", "openai-compatible":
-		return chatOpenAI(cfg, messages, systemPrompt)
-	case "anthropic":
-		return chatAnthropic(cfg, messages, systemPrompt)
-	default:
-		return "", fmt.Errorf("ai: unknown provider %q", cfg.Provider)
+	llm, err := newLLM(cfg)
+	if err != nil {
+		return "", err
 	}
-}
 
-func chatOpenAI(cfg AIConfig, messages []Message, systemPrompt string) (string, error) {
-	endpoint := cfg.Endpoint
-	if endpoint == "" {
-		endpoint = "https://api.openai.com/v1"
-	}
-	url := endpoint + "/chat/completions"
+	ctx := context.Background()
+	msgContent := make([]llms.MessageContent, 0, len(messages)+1)
 
-	msgs := messages
 	if systemPrompt != "" {
-		msgs = append([]Message{{Role: "system", Content: systemPrompt}}, msgs...)
-	}
-	req := CompletionRequest{
-		Model:    cfg.Model,
-		Messages: msgs,
+		msgContent = append(msgContent, llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt))
 	}
 
-	body, err := json.Marshal(req)
+	for _, m := range messages {
+		switch m.Role {
+		case "user":
+			msgContent = append(msgContent, llms.TextParts(llms.ChatMessageTypeHuman, m.Content))
+		case "assistant":
+			msgContent = append(msgContent, llms.TextParts(llms.ChatMessageTypeAI, m.Content))
+		case "system":
+			msgContent = append(msgContent, llms.TextParts(llms.ChatMessageTypeSystem, m.Content))
+		}
+	}
+
+	resp, err := llm.GenerateContent(ctx, msgContent)
 	if err != nil {
-		return "", fmt.Errorf("ai: marshal: %w", err)
+		return "", fmt.Errorf("ai: chat: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(body))
-	if err != nil {
-		return "", fmt.Errorf("ai: new request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
-
-	client := &http.Client{Timeout: requestTimeout}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return "", fmt.Errorf("ai: request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("ai: read response: %w", err)
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("ai: no response choices")
 	}
 
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("ai: API error %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var cr completionResponse
-	if err := json.Unmarshal(respBody, &cr); err != nil {
-		return "", fmt.Errorf("ai: unmarshal: %w", err)
-	}
-	if len(cr.Choices) == 0 {
-		return "", fmt.Errorf("ai: no choices in response")
-	}
-	return cr.Choices[0].Message.Content, nil
-}
-
-func chatAnthropic(cfg AIConfig, messages []Message, systemPrompt string) (string, error) {
-	endpoint := cfg.Endpoint
-	if endpoint == "" {
-		endpoint = "https://api.anthropic.com/v1"
-	}
-	url := endpoint + "/messages"
-
-	msgs := make([]anthropicMsg, len(messages))
-	for i, m := range messages {
-		msgs[i] = anthropicMsg{Role: m.Role, Content: m.Content}
-	}
-
-	req := anthropicRequest{
-		Model:       cfg.Model,
-		MaxTokens:   1024,
-		Messages:    msgs,
-		System:      systemPrompt,
-		Temperature: 0.3,
-	}
-
-	body, err := json.Marshal(req)
-	if err != nil {
-		return "", fmt.Errorf("ai: marshal: %w", err)
-	}
-
-	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(body))
-	if err != nil {
-		return "", fmt.Errorf("ai: new request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", cfg.APIKey)
-	httpReq.Header.Set("anthropic-version", "2023-06-01")
-
-	client := &http.Client{Timeout: requestTimeout}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return "", fmt.Errorf("ai: request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("ai: read response: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("ai: API error %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var ar anthropicResponse
-	if err := json.Unmarshal(respBody, &ar); err != nil {
-		return "", fmt.Errorf("ai: unmarshal: %w", err)
-	}
-	if len(ar.Content) == 0 {
-		return "", fmt.Errorf("ai: no content in response")
-	}
-	return ar.Content[0].Text, nil
+	return resp.Choices[0].Content, nil
 }

@@ -2,9 +2,9 @@
 // unlocked vault and will fail if the vault is locked.
 import * as App from '../../wailsjs/go/main/App'
 
-export interface AICommandResult {
-  command: string
-  explanation: string
+export interface ChatResult {
+  reply: string
+  command?: string
 }
 
 export interface AIErrorResult {
@@ -29,12 +29,21 @@ export interface AIConfigStatus {
   autoExplainErrors: boolean
 }
 
-export const generateCommand = (sessionId: string, prompt: string) =>
-  App.GenerateCommand(sessionId, prompt) as Promise<AICommandResult>
+// Chat session management.
+export const newChat = () =>
+  App.NewChat() as Promise<string>
 
+export const chat = (chatId: string, message: string) =>
+  App.Chat(chatId, message) as Promise<ChatResult>
+
+export const clearChat = (chatId: string) =>
+  App.ClearChat(chatId) as Promise<void>
+
+// Stateless error explanation.
 export const explainError = (sessionId: string, output: string) =>
   App.ExplainError(sessionId, output) as Promise<AIErrorResult>
 
+// Config management.
 export const setAIConfig = (provider: string, model: string, endpoint: string, apiKey: string, systemPrompt?: string, autoExplainErrors?: boolean) =>
   App.SetAIConfig(provider, model, endpoint, apiKey, systemPrompt ?? '', autoExplainErrors ?? false) as Promise<void>
 

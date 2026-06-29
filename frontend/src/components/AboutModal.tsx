@@ -21,7 +21,7 @@ export default function AboutModal({onClose}: {onClose: () => void}) {
             <li>Session logging with auto-rotated log files</li>
             <li>Drag-and-drop tab reordering</li>
             <li>Connection health monitoring (uptime, keepalive)</li>
-            <li>AI command generation (OpenAI / Anthropic / OpenRouter / Ollama)</li>
+            <li>AI chatbot with conversation memory (OpenAI / Anthropic / OpenRouter / Ollama)</li>
             <li>AI error explanation for failed commands</li>
             <li>Per-host font size adjustment</li>
             <li>Copy/paste toolbar buttons on each terminal pane</li>

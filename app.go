@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"bastion/internal/ai"
 	appssh "bastion/internal/ssh"
 	"bastion/internal/store"
 	"github.com/godbus/dbus/v5"
@@ -38,6 +39,10 @@ type App struct {
 
 	// forwardManager manages port forwarding lifecycle across sessions.
 	forwardManager *appssh.PortForwardManager
+
+	// aiChat manages AI chat sessions with conversation memory.
+	// Created on unlock; destroyed on lock.
+	aiChat *ai.SessionManager
 
 	// autoLockTimer fires after autoLockTimeout of inactivity. A dedicated
 	// goroutine (started in startup) listens on its C channel instead of using
@@ -127,6 +132,7 @@ func (a *App) autoLockLoop() {
 				if a.sessions != nil {
 					a.sessions.CloseAll()
 				}
+				a.destroyAIChat()
 				if a.ctx != nil {
 					runtime.EventsEmit(a.ctx, "vault:locked")
 				}
@@ -275,6 +281,39 @@ func (a *App) SetAutoLockScreensaverEnabled(enabled bool) error {
 	return nil
 }
 
+// initAIChat creates or recreates the AI chat session manager from the
+// stored AI config. Safe to call when already initialized (destroys first).
+// Returns nil when no AI config has been saved yet (no error).
+func (a *App) initAIChat() error {
+	if a.aiChat != nil {
+		a.aiChat.Destroy()
+		a.aiChat = nil
+	}
+
+	cfg, err := a.readAIConfig()
+	if err != nil {
+		return fmt.Errorf("bastion: init ai chat: %w", err)
+	}
+	if cfg.APIKey == "" {
+		return nil
+	}
+
+	sm, err := ai.NewSessionManagerFromConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("bastion: init ai chat: %w", err)
+	}
+	a.aiChat = sm
+	return nil
+}
+
+// destroyAIChat tears down all AI chat sessions and releases the manager.
+func (a *App) destroyAIChat() {
+	if a.aiChat != nil {
+		a.aiChat.Destroy()
+		a.aiChat = nil
+	}
+}
+
 // shutdown is called by Wails before exit. We zero the in-memory key and
 // close the DB. Wails calls this on graceful quit.
 func (a *App) shutdown(ctx context.Context) {
@@ -285,6 +324,7 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.sessions != nil {
 		a.sessions.CloseAll()
 	}
+	a.destroyAIChat()
 
 	if a.screensaverSignalCh != nil {
 		close(a.screensaverSignalCh)
@@ -359,6 +399,7 @@ func (a *App) watchScreenSaver() {
 				if a.sessions != nil {
 					a.sessions.CloseAll()
 				}
+				a.destroyAIChat()
 				if a.ctx != nil {
 					runtime.EventsEmit(a.ctx, "vault:locked")
 				}

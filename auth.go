@@ -106,6 +106,8 @@ func (a *App) Setup(password string) error {
 	a.autoLockIdleEnabled = false
 	a.autoLockScreensaverEnabled = false
 	a.mu.Unlock()
+
+	_ = a.initAIChat() // best-effort; no saved config is fine
 	return nil
 }
 
@@ -180,6 +182,7 @@ func (a *App) Unlock(password string) error {
 	a.mu.Unlock()
 
 	a.loadAutoLockSettings()
+	_ = a.initAIChat() // best-effort; no saved config is fine
 	return nil
 }
 
@@ -200,6 +203,7 @@ func (a *App) Lock() error {
 	if a.sessions != nil {
 		a.sessions.CloseAll()
 	}
+	a.destroyAIChat()
 	return nil
 }
 

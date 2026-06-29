@@ -87,10 +87,12 @@ interface AppState {
   aiConfigured: boolean
   aiAutoExplainErrors: boolean
   aiMessages: AIMessage[]
+  aiChatId: string | null
   toggleAI: () => void
   refreshAIConfig: () => Promise<void>
   addAIMessage: (msg: AIMessage) => void
   clearAIMessages: () => void
+  setAIChatId: (id: string | null) => void
 }
 
 export interface AIMessage {
@@ -182,6 +184,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   aiConfigured: false,
   aiAutoExplainErrors: false,
   aiMessages: [],
+  aiChatId: null,
   toggleAI: () => set((s) => ({aiOpen: !s.aiOpen, snippetsOpen: false})),
   refreshAIConfig: async () => {
     try {
@@ -193,4 +196,5 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   addAIMessage: (msg) => set((s) => ({aiMessages: [...s.aiMessages, msg]})),
   clearAIMessages: () => set({aiMessages: []}),
+  setAIChatId: (id) => set({aiChatId: id}),
 }))

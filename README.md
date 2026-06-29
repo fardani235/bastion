@@ -30,9 +30,10 @@ frontend) and [xterm.js](https://xtermjs.org).
   transferred recursively with their structure preserved. Both reuse the
   session's existing authenticated connection — no extra password prompt.
 - **Snippets** — save and paste frequently used commands.
-- **AI command generation** — describe what you want and get a shell command,
+- **AI chatbot** — describe what you want and get a shell command,
   powered by OpenAI, Anthropic, or any OpenAI-compatible provider (OpenRouter,
-  Ollama, etc.). Bring your own API key — stored encrypted in the vault.
+  Ollama, etc.). The chat is stateful — the AI understands context across
+  messages. Bring your own API key — stored encrypted in the vault.
 - **AI error explanation** — when a command fails (stderr patterns like
   `command not found`, `Permission denied`, etc.), Bastion can explain the error
   and suggest a fix.
@@ -113,14 +114,14 @@ crud.go            — groups & snippets IPC
 portforwards.go    — port-forward config IPC
 hosts_import.go    — ~/.ssh/config scan & import
 transfer.go        — file upload & download IPC: PrepareUpload, UploadFiles, ListRemoteDir, DownloadFiles
-ai.go              — AI IPC: GenerateCommand, ExplainError, Get/SetAIConfig, TestAIConnection
+ai.go              — AI IPC: Chat, NewChat, ClearChat, ExplainError, Get/SetAIConfig, TestAIConnection
 emitter.go         — Wails event emitter + optional session logging
 session_health.go  — live session info
 
 internal/vault/    — Argon2id KDF, AES-256-GCM, verify-blob (crypto core)
 internal/store/    — SQLite persistence (hosts, groups, snippets, port_forwards)
 internal/ssh/      — known-hosts trust, PTY session, port-forward & SFTP upload managers
-internal/ai/       — LLM client (OpenAI, Anthropic, OpenAI-compatible formats)
+internal/ai/       — LLM client with LangChain-Go: stateless Chat/ExplainError + stateful chatbot sessions with ConversationBuffer memory
 
 frontend/          — React + TypeScript + Vite + Tailwind + xterm.js
 ```
@@ -204,6 +205,9 @@ destination folder, and download with live per-file progress bars.
 ### AI configuration
 
 AI is **Bring Your Own Key** — Bastion never ships with bundled API credentials.
+
+Chat sessions are backed by **LangChain-Go** with `ConversationBuffer` memory,
+so the AI maintains context across messages in a single conversation session.
 
 Supported providers:
 - **OpenAI** — uses `https://api.openai.com/v1` by default

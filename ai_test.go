@@ -48,14 +48,13 @@ func TestSetAIConfig_RejectsBadEndpoint(t *testing.T) {
 		t.Fatal("SetAIConfig accepted an http remote endpoint; want rejection")
 	}
 
-	// Nothing should have been stored.
 	if _, ok, _ := a.store.GetMeta(metaAIConfig); ok {
 		t.Fatal("a rejected SetAIConfig must not persist any config")
 	}
 }
 
-// TestSetAIConfig_KeptKeyOnBlankWithValidEndpoint covers the happy path: a valid
-// endpoint stores, and a later blank-key save preserves the key.
+// TestSetAIConfig_RoundTrip covers the happy path: a valid endpoint stores,
+// and a later blank-key save preserves the key.
 func TestSetAIConfig_RoundTrip(t *testing.T) {
 	a := newTestApp(t)
 	if err := a.Setup("correct horse battery staple"); err != nil {
@@ -93,5 +92,90 @@ func TestSetAIConfig_RoundTrip(t *testing.T) {
 	}
 	if cfg.AutoExplainErrors {
 		t.Fatal("AutoExplainErrors should now be false after the second save")
+	}
+}
+
+// TestNewChat_WithoutConfig verifies NewChat fails when AI is not configured.
+func TestNewChat_WithoutConfig(t *testing.T) {
+	a := newTestApp(t)
+	if err := a.Setup("test-password"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+
+	_, err := a.NewChat()
+	if err == nil {
+		t.Fatal("NewChat must fail when AI is not configured")
+	}
+}
+
+// TestChat_WithoutSession verifies Chat fails when no session exists.
+func TestChat_WithoutSession(t *testing.T) {
+	a := newTestApp(t)
+	if err := a.Setup("test-password"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+
+	_, err := a.Chat("nonexistent", "hello")
+	if err == nil {
+		t.Fatal("Chat must fail when AI is not configured")
+	}
+}
+
+// TestChat_WithLockedVault verifies Chat IPC methods fail when vault is locked.
+func TestChat_WithLockedVault(t *testing.T) {
+	a := newTestApp(t)
+	if err := a.Setup("test-password"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	if err := a.Lock(); err != nil {
+		t.Fatalf("Lock: %v", err)
+	}
+
+	_, err := a.NewChat()
+	if err != errLocked {
+		t.Fatalf("NewChat with locked vault: got %v, want %v", err, errLocked)
+	}
+
+	_, err = a.Chat("any", "hello")
+	if err != errLocked {
+		t.Fatalf("Chat with locked vault: got %v, want %v", err, errLocked)
+	}
+
+	err = a.ClearChat("any")
+	if err != errLocked {
+		t.Fatalf("ClearChat with locked vault: got %v, want %v", err, errLocked)
+	}
+}
+
+// TestClearChat_WithoutConfig verifies ClearChat fails when AI is not configured.
+func TestClearChat_WithoutConfig(t *testing.T) {
+	a := newTestApp(t)
+	if err := a.Setup("test-password"); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+
+	err := a.ClearChat("any")
+	if err == nil {
+		t.Fatal("ClearChat must fail when AI is not configured")
+	}
+}
+
+// TestExtractShellCommand verifies the fenced-code-block extraction.
+func TestExtractShellCommand(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"No fence here", ""},
+		{"```shell\nls -la\n```", "ls -la\n"},
+		{"Text before\n```shell\nfind . -name '*.go'\n```\nText after", "find . -name '*.go'\n"},
+		{"```shell\n   ps aux   \n```", "   ps aux   \n"},
+		{"Unclosed fence ```shell\necho hi", ""},
+	}
+	for _, tc := range tests {
+		got := extractShellCommand(tc.input)
+		if got != tc.want {
+			t.Errorf("extractShellCommand(%q) = %q, want %q", tc.input, got, tc.want)
+		}
 	}
 }
